@@ -2,9 +2,11 @@ import * as path from 'path'
 import {ParseOptions, TestParser} from '../../test-parser'
 import {parseStringPromise} from 'xml2js'
 
-import {JunitReport, SingleSuiteReport, TestCase, TestSuite} from './java-junit-types'
+import {JunitReport, SingleSuiteReport, TestCase, TestGroup, TestSuite} from './java-junit-types'
 import {parseStackTraceElement} from './java-stack-trace-element-parser'
 import {normalizeFilePath} from '../../utils/path-utils'
+
+import { error } from "console";
 
 import {
   TestExecutionResult,
@@ -33,7 +35,7 @@ export class JavaJunitParser implements TestParser {
     const isReport = (reportOrSuite as JunitReport).testsuites !== undefined
 
     // XML might contain:
-    // - multiple suites under <testsuites> root node
+    // - multiple (nested) suites under <testsuites> root node
     // - single <testsuite> as root node
     let ju: JunitReport
     if (isReport) {
@@ -77,23 +79,13 @@ export class JavaJunitParser implements TestParser {
   }
 
   private getGroups(suite: TestSuite): TestGroupResult[] {
-    if (suite.testcase === undefined) {
+    if (suite.testcase === undefined && suite.testsuite === undefined) {
       return []
     }
 
-    const groups: {name: string; tests: TestCase[]}[] = []
-    for (const tc of suite.testcase) {
-      // Normally classname is same as suite name - both refer to same Java class
-      // Therefore it doesn't make sense to process it as a group
-      // and tests will be added to default group with empty name
-      const className = tc.$.classname === suite.$.name ? '' : tc.$.classname
-      let grp = groups.find(g => g.name === className)
-      if (grp === undefined) {
-        grp = {name: className, tests: []}
-        groups.push(grp)
-      }
-      grp.tests.push(tc)
-    }
+    const groups: TestGroup[] = []
+
+    this.recurseGroup(suite, groups)
 
     return groups.map(grp => {
       const tests = grp.tests.map(tc => {
@@ -105,6 +97,30 @@ export class JavaJunitParser implements TestParser {
       })
       return new TestGroupResult(grp.name, tests)
     })
+  }
+
+  private recurseGroup(suite: TestSuite, groups: TestGroup[]) {
+    if (suite.testsuite !== undefined) {
+      for (const ts of suite.testsuite) {
+        this.recurseGroup(ts, groups);
+      }
+      return;
+    }
+
+    if (suite.testcase === undefined) return;
+
+    for (const tc of suite.testcase) {
+      // Normally classname is same as suite name - both refer to same Java class
+      // Therefore it doesn't make sense to process it as a group
+      // and tests will be added to default group with empty name
+      const className = tc.$.classname === suite.$.name ? '' : tc.$.classname
+      let grp = groups.find(g => g.name === className)
+      if (grp === undefined) {
+        grp = {name: className, tests: []} as TestGroup
+        groups.push(grp)
+      }
+      grp.tests.push(tc)
+    }
   }
 
   private getTestCaseResult(test: TestCase): TestExecutionResult {

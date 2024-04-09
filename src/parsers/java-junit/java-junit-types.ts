@@ -23,7 +23,8 @@ export interface TestSuite {
     time: string
     timestamp?: Date
   }
-  testcase: TestCase[]
+  testcase?: TestCase[]
+  testsuite?: TestSuite[]
 }
 
 export interface TestCase {
@@ -36,6 +37,11 @@ export interface TestCase {
   failure?: string | Failure[]
   error?: string | Failure[]
   skipped?: string[]
+}
+
+export interface TestGroup {
+  name: string
+  tests: TestCase[]
 }
 
 export interface Failure {
